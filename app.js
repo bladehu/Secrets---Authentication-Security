@@ -7,7 +7,8 @@ const mongoose = require("mongoose");
 const session = require("express-session");
 const passport = require("passport");
 const passportLocalMongoose = require("passport-local-mongoose");
-const GoogleStrategy = require('passport-google-oauth20').Strategy;
+const GoogleStrategy = require("passport-google-oauth20").Strategy;
+const FacebookStrategy = require("passport-facebook").Strategy;
 const findOrCreate = require("mongoose-findorcreate");
 
 const app = express();
@@ -32,9 +33,11 @@ mongoose.connect("mongodb://localhost:27017/userDB", {
 });
 
 const userSchema = new mongoose.Schema({
+  username: String,
   email: String,
   password: String,
   googleId: String,
+  facebookId: String,
   secret: String
 });
 
@@ -61,8 +64,22 @@ passport.use(new GoogleStrategy({
   },
   function(accessToken, refreshToken, profile, cb) {
     User.findOrCreate({
+      username: profile.displayName,
       googleId: profile.id
     }, function(err, user) {
+      return cb(err, user);
+    });
+  }
+));
+
+passport.use(new FacebookStrategy({
+    clientID: process.env.FACEBOOK_APP_ID,
+    clientSecret: process.env.FACEBOOK_APP_SECRET,
+    callbackURL: "http://localhost:3000/auth/facebook/secrets",
+    profileFields: ['id', 'displayName', 'photos', 'email']
+  },
+  function(accessToken, refreshToken, profile, cb) {
+    User.findOrCreate({username: profile.displayName, facebookId: profile.id }, function (err, user) {
       return cb(err, user);
     });
   }
@@ -74,11 +91,21 @@ app.get("/", function(req, res) {
 
 app.get("/auth/google", passport.authenticate("google", {scope: ["profile"]}));
 
+
+
 app.get("/auth/google/secrets",
   passport.authenticate("google", { failureRedirect: "/login" }),
   function(req, res) {
     res.redirect("/secrets");
   });
+
+  app.get('/auth/facebook', passport.authenticate("facebook"));
+
+  app.get('/auth/facebook/secrets',
+    passport.authenticate('facebook', { failureRedirect: '/login' }),
+    function(req, res) {
+      res.redirect('/secrets');
+    });
 
 app.get("/login", function(req, res) {
   res.render("login");
@@ -110,8 +137,6 @@ app.get("/submit", function(req, res){
 
 app.post("/submit", function(req, res){
   const submittedSecret = req.body.secret;
-  console.log(submittedSecret);
-  console.log(req.user._id);
   User.findById(req.user._id, function(err, foundUser){
     if (err){
       console.log(err);
